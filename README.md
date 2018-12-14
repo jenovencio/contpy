@@ -48,9 +48,10 @@ x_sol, p_sol, info_dict = optimize.continuation(spiral_res_vec,x0=x0,p_range=(-1
 
 ```
 
-# Frequency
-The frequency module provides some function to transforme time to frequency domain and its inversion operations.
-One of the main function is the `assemble_HBMOperator` which is a Truncated Fourier series.
+# Frequency 
+The frequency module provides some function to transform time to frequency domain and its inversion operations.
+One of the main function is the `assemble_HBMOperator` which is a Truncated Fourier series. 
+With this operator and the `create_Z_matrix` function Harmonic Balanced Method (HBM) can be easily performed.   
 
 ``` python
 import matplotlib.pyplot as plt
@@ -87,4 +88,15 @@ plt.plot(f_actual[0],'r--',label='computed')
 plt.legend()
 plt.show()    
 
+```
+
+
+# AFT 
+Altering Frequency and time domain (AFT) technique is easily implemented in ContPy. The HBMOpetator is a orthogonal operator, `Q`, which implies
+its conjugate transpose `Q.H` is the inverse Fourier transform. Given a nonlinear function in time, `fnl(u)` the frequency nonlinear forced `fn_(u_)` is easy achieved by `Q` and `Q.H` multiplication.
+`Q` is a special ContPy operator and developer can add more functioned in this class.
+
+``` python
+fnl = lambda u : beta*(Tc.dot(u)**3)
+fnl_ = lambda u_ : Q.H.dot(fnl(Q.dot(u_))) - fl_
 ```
