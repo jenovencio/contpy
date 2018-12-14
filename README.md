@@ -4,6 +4,8 @@ The ideia behind ContPy is to provide a set a function to solving nonlinear cont
 
 <a href="https://www.codecogs.com/eqnedit.php?latex=R(x,\alpha)=&space;0" target="_blank"><img src="https://latex.codecogs.com/gif.latex?R(x,\alpha)=&space;0" title="R(x,\alpha)= 0" /></a>
 
+given \alpha = [\alpha_0,\alpha_{end}]
+
 Currently 3 modules are available in ContPy.
 - optimize
 - frequency
