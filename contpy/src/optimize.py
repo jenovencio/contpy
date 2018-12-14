@@ -6,8 +6,8 @@ from scipy.sparse.linalg import LinearOperator
 from scipy import linalg
 import numdifftools as nd
 import matplotlib.pyplot as plt
-from frequency import cos_bases_for_MHBM, create_Z_matrix, linear_harmonic_force, hbm_complex_bases, assemble_hbm_operator
-from operators import ReshapeOperator
+from .frequency import cos_bases_for_MHBM, create_Z_matrix, linear_harmonic_force, hbm_complex_bases, assemble_hbm_operator
+from .operators import ReshapeOperator
 
 def func_wrapper(fun,x0_aug_real,extra_arg=None):
     ''' This function is a wrapper function for

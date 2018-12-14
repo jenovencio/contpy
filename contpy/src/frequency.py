@@ -4,7 +4,8 @@ import matplotlib.pyplot as plt
 from scipy import sparse
 from unittest import TestCase, main
 from numpy.testing import assert_array_equal, assert_array_almost_equal
-from operators import HBMOperator, ReshapeOperator     
+from .operators import HBMOperator as HBMOperator 
+#import operators.ReshapeOperator as ReshapeOperator    
 
 def harmonic_bases(x,freq=[1]):
     ''' create a harmonic bases [1, sin(w_i*x), cos(w_i*x)]

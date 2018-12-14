@@ -1,10 +1,10 @@
 import numpy as np
 import scipy.sparse as sparse
-from utils.utils import OrderedSet, get_dofs
 import collections
 from unittest import TestCase, main
 from numpy.testing import assert_array_equal
 from scipy.sparse.linalg import LinearOperator as LO
+from .utils import OrderedSet, get_dofs
 
 class ReshapeOperator():
     ''' Reshape operator acts as a LinearOperator
@@ -104,8 +104,6 @@ class HBMOperator():
     def dot(self,u_):
         return self._matvec(u_)
 
-    
-
 class HBMOperator_():
     def __init__(self,Q,Ro):
         
@@ -194,9 +192,6 @@ class HBMOperatorAdjoint_(HBMOperator_):
     def _adjoint(self):
        return self.adjoint
 
-
-
-
 class HBMOperator_conj_():
     def __init__(self,Q,Ro):
         super(HBMOperator_,self).__init__(Q,Ro)
@@ -206,7 +201,6 @@ class HBMOperator_conj_():
         return self.Q.T.dot(self.Ro.T.dot(u))
 
 
-     
 class SelectionOperator():
     def __init__(self,selection_dict,id_matrix=None):
         ''' the selection dict contain labels as key and 
