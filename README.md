@@ -1,11 +1,11 @@
-# contpy
-ContPy is a simple Continuation library for python which allows complex alrithmetic opetations.
+# ContPy
+ContPy is a simple Continuation library for python which allows complex arithmetic opetations.
 The ideia behind ContPy is to provide a set a function to solving nonlinear continuation techniques which have the following format:
 
-$$
-R(x,\alpha) = 0,
+\begin(align)
+R(x,\alpha) = 0 \\
 \textmath{'given '} \alpha = [\alpha_0,alpha_end]
-$$
+\end(align)
 
 Currently 3 modules are available in ContPy.
 - optimize
