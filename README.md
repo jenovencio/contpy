@@ -2,10 +2,7 @@
 ContPy is a simple Continuation library for python which allows complex arithmetic opetations.
 The ideia behind ContPy is to provide a set a function to solving nonlinear continuation techniques which have the following format:
 
-\begin(align)
-R(x,\alpha) = 0 \\
-\textmath{'given '} \alpha = [\alpha_0,alpha_end]
-\end(align)
+<a href="https://www.codecogs.com/eqnedit.php?latex=R(x,\alpha)=&space;0" target="_blank"><img src="https://latex.codecogs.com/gif.latex?R(x,\alpha)=&space;0" title="R(x,\alpha)= 0" /></a>
 
 Currently 3 modules are available in ContPy.
 - optimize
