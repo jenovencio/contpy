@@ -250,6 +250,12 @@ def striu_from_vector(v,n):
     indices = np.triu_indices(n)
     return sparse.csc_matrix((v, indices))
 
+def real_jacobian(fun,n=1):
+    ''' contpy interface to acess numdifftool functions
+    '''
+    return nd.Jacobian(fun,n=n)
+    
+
 def root(fun, x0, args=(), method='hybr', jac=None, tol=None, callback=None, options=None):
     ''' This function is a wrapper for scipy.optimize.root which 
     deals with complex functions
