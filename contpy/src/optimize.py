@@ -5,9 +5,6 @@ from scipy.misc import derivative
 from scipy.sparse.linalg import LinearOperator
 from scipy import linalg
 import numdifftools as nd
-import matplotlib.pyplot as plt
-from .frequency import cos_bases_for_MHBM, create_Z_matrix, linear_harmonic_force, hbm_complex_bases, assemble_hbm_operator
-from .operators import ReshapeOperator
 
 def func_wrapper(fun,x0_aug_real,extra_arg=None):
     ''' This function is a wrapper function for
@@ -119,11 +116,6 @@ def jac_wrapper(Jfun,x0_aug_real,extra_arg=None):
         Jfun_aug_real = Jfun(x0)
     else:
         Jfun_aug_real = Jfun(extra_arg)(x0)
-    #J_real = sparse.csc_matrix(Jfun_aug_real.real)
-    #J_imag = sparse.csc_matrix(Jfun_aug_real.imag)
-    #jac_real_row_1 = sparse.hstack((J_real,J_imag ))
-    #jac_real_row_2 = sparse.hstack((-J_imag,J_real))
-    #jac_real = sparse.vstack((jac_real_row_1, jac_real_row_2))
 
     jac_real = complex_matrix_to_real_block(Jfun_aug_real)
 
@@ -255,7 +247,6 @@ def real_jacobian(fun,n=1):
     '''
     return nd.Jacobian(fun,n=n)
     
-
 def root(fun, x0, args=(), method='hybr', jac=None, tol=None, callback=None, options=None):
     ''' This function is a wrapper for scipy.optimize.root which 
     deals with complex functions
@@ -408,9 +399,11 @@ def continuation(fun,x0,p_range,p0=None, jacx=None, jacp=None ,step=1.0,max_int=
         p0 = p_range[0]
 
     # converting complex function to real, due to a mix of real and complex varialbles
+    complex = False
     if x0.dtype == 'complex':
         fun_real = lambda x, p : func_wrapper(fun, x, p)
         x0_real = complex_array_to_real(x0)
+        complex = True
     else:
         fun_real = fun
         x0_real = x0
@@ -425,14 +418,20 @@ def continuation(fun,x0,p_range,p0=None, jacx=None, jacp=None ,step=1.0,max_int=
     if jacx is None:
         JFx = lambda p : nd.Jacobian(Fx(p))
     elif callable(jacx):
-        JFx = lambda p : lambda x : jac_wrapper(jacx,x,p).toarray() 
+        if complex:
+            JFx = lambda p : lambda x : jac_wrapper(jacx,x,p).toarray() 
+        else:
+            JFx = lambda p : lambda x : jacx(p)(x)
     else:
         raise('Jacobian not supported')
 
     if jacp is None:
         JFp = lambda x : nd.Jacobian(Fp(x))
     elif callable(jacp):
-        JFp = lambda x : jac_wrapper(jacp,x,p).toarray() 
+        if complex:
+            JFp =  lambda x : lambda p : jac_wrapper(jacp,np.array([p]),x).toarray() 
+        else:
+            JFp =  lambda x : lambda p : jacp(x)(p)
     else:
         raise('Jacobian not supported')
 
@@ -502,7 +501,7 @@ def continuation(fun,x0,p_range,p0=None, jacx=None, jacp=None ,step=1.0,max_int=
             res.append(y0)
             step = default_step
             if p>=p_range[1] or p<=p_range[0] :
-                print('Continuation algorithm has reached the limits of paramenter range')
+                print('Continuation algorithm has reached the limits of parameter range')
                 info_dict['success'] = True
                 break
 
@@ -1177,6 +1176,32 @@ class  Test_root(TestCase):
         np.testing.assert_array_almost_equal(x_target, x_sol[0] ,  decimal=6 )
         np.testing.assert_array_almost_equal(y_target, x_sol[1] ,  decimal=6 )
 
+    def test_spiral_with_analytical_jacobian(self):
+        a1, b1 = 0, 0.5
+        w = 2               
+        R = lambda x, p : np.array([(x[0] - (a1 + b1*p)*np.cos(w*p)), (x[1] - (a1 + b1*p)*np.sin(w*p))]) 
+
+
+        JRx = lambda p : lambda x :  np.eye(2)
+        JRp = lambda x : lambda p :  -1.0*np.array([[-b1*p*w*np.sin(w*p) + b1*np.cos(w*p), b1*p*w*np.cos(w*p) + b1*np.sin(w*p)]])
+
+        # computing numerical jacobian
+        JRp_num = lambda x : real_jacobian(lambda p : R(x,p))
+        JRx_num = lambda p : real_jacobian(lambda x : R(x,p))
+
+        x0=np.array([0.0,0.0])
+        x_sol, p_sol, info_dict = continuation(R,x0=x0,jacx=JRx,jacp=JRp,
+                                                p_range=(-10.0,10.0),p0=0.0,max_dp=0.1,step=0.1,max_int=500)
+
+        xs = lambda s : (a1 + b1*s)*np.cos(w*s)
+        ys = lambda s : (a1 + b1*s)*np.sin(w*s)   
+
+        x_target = np.array(list(map(xs,p_sol)))
+        y_target = np.array(list(map(ys,p_sol)))
+
+        np.testing.assert_array_almost_equal(x_target, x_sol[0] ,  decimal=6 )
+        np.testing.assert_array_almost_equal(y_target, x_sol[1] ,  decimal=6 )
+
     def test_3d_spiral(self):
         z = lambda p : p 
         r = lambda p : (p-8)**2 + 1
@@ -1285,7 +1310,7 @@ class  Test_root(TestCase):
         np.testing.assert_array_almost_equal(calc_error, 0.0*calc_error ,  decimal=9 )
         
 
-    def test_2dof_duffing_fixed_parameter_corrector(self):
+    def _test_2dof_duffing_fixed_parameter_corrector(self):
         nH = 2
         n_points = 200
         amplitude_dof_1 = 1.0
@@ -1352,7 +1377,7 @@ class  Test_root(TestCase):
         calc_error = np.array(list(map(R,y_d.T,p_d))).flatten()
         np.testing.assert_array_almost_equal(calc_error, 0.0*calc_error ,  decimal=9 )
 
-    def test_continuation_analytical_jac(self):
+    def _test_continuation_analytical_jac(self):
         #HBM variables
         nH = 2
         n_points = 2000
@@ -1409,7 +1434,7 @@ class  Test_root(TestCase):
 
 
 
-    def implicit_continuation(self):
+    def _implicit_continuation(self):
         # case constants
         beta = 1.0
         m1 = 1.0
@@ -1508,10 +1533,19 @@ class  Test_root(TestCase):
                                             max_int=2, max_dp=0.01,step=0.05, max_int_corr=30, tol=1.0E-8,root_method='df-sane')
 
 if __name__ == '__main__':
-    #main()
+    import sys
+    import matplotlib.pyplot as plt
     
-    test_obj = Test_root()
+    sys.path.append('..')
+
+    from src.frequency import cos_bases_for_MHBM, create_Z_matrix, linear_harmonic_force, hbm_complex_bases, assemble_hbm_operator
+    from src.operators import ReshapeOperator
+
+    main()
+    
+    #test_obj = Test_root()
+    #test_obj.test_spiral_with_analytical_jacobian()
     #test_obj.test_2dof_duffing()
-    test_obj.test_continuation_analytical_jac()
+    #test_obj.test_continuation_analytical_jac()
     #test_obj.test_implicit_continuation()
     #test_obj.test_2dof_duffing_fixed_parameter_corrector()

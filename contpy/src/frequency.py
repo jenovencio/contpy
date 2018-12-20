@@ -338,7 +338,30 @@ def create_freq_list(T,dt=1,get_time=False):
         return freq_list
 
         
-def create_Z_matrix(K,C,M,f0=1.0,nH=1, static=True, complex_data= False):
+def assemble_Z_matrix(K,C,M,f0=1.0,nH=1, static=False, complex_data= False):
+    ''' assemble Z matrix based on the number of harmonics to be considered
+
+    Parameters:
+    ------------
+        K : np.array or sparse.matrix
+            Stiffness matrix
+        C : np.array or sparse.matrix
+            Damping matrix
+        M : np.array or sparse.matrix
+            mass matrix
+        f0 : frequency, default=1.0
+            Frequency in Hertz to assemble the block Dynamic Stiffness matrix
+        nH : int, default=1
+            number of harmonics to be considered
+        static : Boolean, default=False
+            Assemble static matrix (equivalent to assemble 0 frequency)
+        complex_data : Boolean, default=False
+            complex data considered complex time signal, frequency have also the negative spectrum
+
+    return 
+    ------------
+        np.array or sparse.matrix
+    '''
     
     #Z_list = []
     number_of_harm = nH 
@@ -355,13 +378,51 @@ def create_Z_matrix(K,C,M,f0=1.0,nH=1, static=True, complex_data= False):
         np.kron(1J*np.diag(freq_list),C) - \
         np.kron(np.diag(freq_list)**2,M)
     
-    #for w_i in freq_list:
-    #    Z_i = K + 1J*w_i*C - w_i*w_i*M
-    #    Z_list.append(Z_i)
-    #return sparse.block_diag(Z_list).tocsc()
     return Z
     
     
+def assemble_jacobian_Zw_matrix(K,C,M,f0=1.0,nH=1, static=False, complex_data= False):
+    ''' assemble Z matrix based on the number of harmonics to be considered
+
+    Parameters:
+    ------------
+        K : np.array or sparse.matrix
+            Stiffness matrix
+        C : np.array or sparse.matrix
+            Damping matrix
+        M : np.array or sparse.matrix
+            mass matrix
+        f0 : frequency, default=1.0
+            Frequency in Hertz to assemble the block Dynamic Stiffness matrix
+        nH : int, default=1
+            number of harmonics to be considered
+        static : Boolean, default=False
+            Assemble static matrix (equivalent to assemble 0 frequency)
+        complex_data : Boolean, default=False
+            complex data considered complex time signal, frequency have also the negative spectrum
+
+    return 
+    ------------
+        np.array or sparse.matrix
+    '''
+    
+    #Z_list = []
+    number_of_harm = nH 
+    freq_list = hbm_freq(f0,number_of_harm=nH,complex_data=complex_data,static=static)
+    num_of_freq = len(freq_list)
+    
+    # Z =  j (x) C - 2*w * (x) M
+    if sparse.issparse(M):
+        JZw = sparse.kron(1J*np.diag(freq_list),C) - \
+        sparse.kron(2*np.diag(freq_list),M)
+    else:
+        JZw = np.kron(1J*np.diag(freq_list),C) - \
+        np.kron(2*np.diag(freq_list),M)
+    
+    return JZw
+    
+
+
 def hbm_freq(f0,number_of_harm=1,static=False,complex_data=False):
     '''
     This function creates a list of frequencies [rad/s] given the primary frequency
@@ -662,6 +723,7 @@ class  Test_Operators(TestCase):
 
 #aliasing for future compatibilite
 assemble_hbm_operator = assemble_HBMOperator
+create_Z_matrix = assemble_Z_matrix
 
 if __name__ == '__main__':
     main()    
