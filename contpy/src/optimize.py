@@ -429,7 +429,7 @@ def continuation(fun,x0,p_range,p0=None, jacx=None, jacp=None ,step=1.0,max_int=
         JFp = lambda x : nd.Jacobian(Fp(x))
     elif callable(jacp):
         if complex:
-            JFp =  lambda x : lambda p : jac_wrapper(jacp,np.array([p]),x).toarray() 
+            JFp =  lambda x : lambda p : complex_array_to_real(jacp(real_array_to_complex(x))(p)).T
         else:
             JFp =  lambda x : lambda p : jacp(x)(p)
     else:
@@ -593,7 +593,12 @@ def matcont(fun,y0,v0,G,Gy,R,b,max_int=10,tol=1.0E-6):
         Gy_eval = Gy(y,v)
         G_eval = G(y,v)
         R_eval = R(y,v)
-        lu_factor = linalg.lu_factor(Gy_eval)
+        try:
+            lu_factor = linalg.lu_factor(Gy_eval)
+        except:
+            success = False
+            print('Warning! Jacobian is singular. The step length will be reduced')
+            return y,v,error_norm, error_list, success
 
         # update the solution y and tanget vector v
         delta_y = linalg.lu_solve(lu_factor,G_eval)
@@ -1202,6 +1207,37 @@ class  Test_root(TestCase):
         np.testing.assert_array_almost_equal(x_target, x_sol[0] ,  decimal=6 )
         np.testing.assert_array_almost_equal(y_target, x_sol[1] ,  decimal=6 )
 
+    def test_complex_spiral(self):
+        # Defining a Residual Equation for R(x,p) for the spiral
+        a1 = 0.2
+        w = 2      
+        complex_spiral = lambda p : -1 + np.exp(1J*w*p + a1*p)
+        R = lambda x, p : x - complex_spiral(p)
+
+        # computing Analytical jacobian
+        JRx = lambda p : lambda x :  np.array([[1.0 + 1J*0]])
+        JRp = lambda x : lambda p :  np.array([[-np.exp(1J*w*p + a1*p)*(1J*w + a1)]])
+
+        # computing numerical jacobian
+        JRp_num = lambda x : real_jacobian(lambda p : R(x,p))
+        JRx_num = lambda p : complex_jacobian(lambda x : R(x,p))
+
+
+        xn = np.array([0 + 1J*1])
+        pn = 1
+        J_ana_eval = JRx(pn)(xn)
+        J_num_eval = JRx_num(pn)(xn)
+
+
+        # continuation with numerical Jacobian
+        x0=np.array([0.0],dtype=np.complex)
+        x_sol, p_sol, info_dict = continuation(R,x0=x0, correction_method='matcont',jacx=JRx,jacp=JRp,
+                                                p_range=(-10.0,10.0),p0=0.0,max_dp=0.01,step=0.1,max_int=500)
+
+        x_target = np.array(list(map(complex_spiral,p_sol)))
+        np.testing.assert_array_almost_equal(x_target, x_sol.flatten() ,  decimal=8)
+
+       
     def test_3d_spiral(self):
         z = lambda p : p 
         r = lambda p : (p-8)**2 + 1
@@ -1309,7 +1345,6 @@ class  Test_root(TestCase):
         calc_error = np.array(list(map(R,y_d.T,p_d))).flatten()
         np.testing.assert_array_almost_equal(calc_error, 0.0*calc_error ,  decimal=9 )
         
-
     def _test_2dof_duffing_fixed_parameter_corrector(self):
         nH = 2
         n_points = 200
@@ -1541,11 +1576,9 @@ if __name__ == '__main__':
     from src.frequency import cos_bases_for_MHBM, create_Z_matrix, linear_harmonic_force, hbm_complex_bases, assemble_hbm_operator
     from src.operators import ReshapeOperator
 
-    main()
+    #main()
     
-    #test_obj = Test_root()
-    #test_obj.test_spiral_with_analytical_jacobian()
-    #test_obj.test_2dof_duffing()
-    #test_obj.test_continuation_analytical_jac()
-    #test_obj.test_implicit_continuation()
-    #test_obj.test_2dof_duffing_fixed_parameter_corrector()
+    test_obj = Test_root()
+    #test_obj.test_complex_spiral()
+    test_obj.test_spiral()
+    
