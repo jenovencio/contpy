@@ -575,7 +575,7 @@ def corrector(fun,y0,v0,G,Gy,R,b,max_int=10,tol=1.0E-6, correction_method='moore
 
     return y,v,error_norm, error_list, success
 
-def matcont(fun,y0,v0,G,Gy,R,b,max_int=10,tol=1.0E-6):
+def matcont(fun,y0,v0,G,Gy,R,b,max_int=10,tol=1.0E-6,normalize=True):
 
     fun_norm = lambda y : np.linalg.norm(fun(y[:-1],y[-1]))
     y = y0 
@@ -605,6 +605,9 @@ def matcont(fun,y0,v0,G,Gy,R,b,max_int=10,tol=1.0E-6):
         delta_v = linalg.lu_solve(lu_factor,R_eval)
         y -= delta_y
         v -= delta_v
+
+        if normalize:
+            v /=np.linalg.norm(v)
         
     return y,v,error_norm, error_list, success
 
@@ -632,7 +635,7 @@ def optimize_matcont(fun,y0,v0,G,Gy,R,b,max_int=10,tol=1.0E-6):
 
     return y,v,error_norm, error_list, success
 
-def moore_penrose(fun,y0,v0,G,Gy,R,b,max_int=10,tol=1.0E-6):
+def moore_penrose(fun,y0,v0,G,Gy,R,b,max_int=10,tol=1.0E-6,normalize=True):
 
     fun_norm = lambda y : np.linalg.norm(fun(y[:-1],y[-1]))
     y = y0 
@@ -653,8 +656,11 @@ def moore_penrose(fun,y0,v0,G,Gy,R,b,max_int=10,tol=1.0E-6):
             delta_y = np.linalg.solve(Gy_eval ,G_eval)
             
         except:
-            print('Using iterative solver = %f' %y[-1])
-            delta_y, success = sparse.linalg.cg(Gy_eval, G_eval,y,tol=tol)
+            #print('Using iterative solver = %f' %y[-1])
+            #delta_y, success = sparse.linalg.cg(Gy_eval, G_eval,y,tol=tol)
+            success = False
+            print('Warning! Jacobian is singular. The step length will be reduced')
+            return y,v,error_norm, error_list, success
 
         y -= delta_y
         # update tangent vector at new y = [x,p]
@@ -664,10 +670,15 @@ def moore_penrose(fun,y0,v0,G,Gy,R,b,max_int=10,tol=1.0E-6):
         try:
             delta_v = np.linalg.solve(Gy_eval ,R_eval)
         except:
-            print('Using iterative solver = %f' %y[-1])
-            delta_v, sucess = sparse.linalg.cg(Gy_eval, R_eval,v,tol=tol)
+            #print('Using iterative solver = %f' %y[-1])
+            #delta_v, sucess = sparse.linalg.cg(Gy_eval, R_eval,v,tol=tol)
+            success = False
+            print('Warning! Jacobian is singular. The step length will be reduced')
+            return y,v,error_norm, error_list, success
 
         v -= delta_v 
+        if normalize:
+            v /=np.linalg.norm(v)
 
     return y,v,error_norm, error_list, success
 
@@ -1173,7 +1184,7 @@ class  Test_root(TestCase):
 
         x0=np.array([0.0,0.0])
 
-        x_sol, p_sol, info_dict = continuation(spiral_res_vec,x0=x0,p_range=(-10.0,10.0),p0=0.0,max_dp=0.1)
+        x_sol, p_sol, info_dict = continuation(spiral_res_vec,x0=x0,p_range=(-10.0,10.0),p0=0.0,max_dp=1.0)
 
         x_target = np.array(list(map(xs,p_sol)))
         y_target = np.array(list(map(ys,p_sol)))
