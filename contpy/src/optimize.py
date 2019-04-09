@@ -189,8 +189,8 @@ def complex_matrix_to_real_block(M_complex,sparse_matrix=True):
     '''
     M_real = sparse.csc_matrix(M_complex.real)
     M_imag = sparse.csc_matrix(M_complex.imag)
-    M_block_real_row_1 = sparse.hstack((M_real,M_imag ))
-    M_block_real_row_2 = sparse.hstack((-M_imag,M_real))
+    M_block_real_row_1 = sparse.hstack((M_real,-M_imag ))
+    M_block_real_row_2 = sparse.hstack(( M_imag,M_real))
     M_block = sparse.vstack((M_block_real_row_1, M_block_real_row_2))
     if sparse_matrix:
         return M_block 
@@ -415,8 +415,10 @@ def continuation(fun,x0,p_range,p0=None, jacx=None, jacp=None ,step=1.0,max_int=
     Fx = lambda p : lambda x : fun_real(x,p)
     Fp = lambda x : lambda p : fun_real(x,p)
 
+    JFx_num = lambda p : nd.Jacobian(Fx(p))
+
     if jacx is None:
-        JFx = lambda p : nd.Jacobian(Fx(p))
+        JFx = JFx_num
     elif callable(jacx):
         if complex:
             JFx = lambda p : lambda x : jac_wrapper(jacx,x,p).toarray() 
@@ -1355,6 +1357,63 @@ class  Test_root(TestCase):
 
         calc_error = np.array(list(map(R,y_d.T,p_d))).flatten()
         np.testing.assert_array_almost_equal(calc_error, 0.0*calc_error ,  decimal=9 )
+
+    def test_duffing_with_analytical_derivative(self):
+        
+        from cases.case2 import name, n_dofs, K,M,C,P,beta, B_delta, H
+        
+        #HBM variables
+        nH = 1
+        n_points = 200
+
+        # buiding Harmonic bases and the Augmented force vector amplitude
+        Q = assemble_HBMOperator(n_dofs,number_of_harm=nH ,n_points=n_points)
+        P_aug = list(0*P)*nH
+        P_aug[0:n_dofs] = list(P)
+        P_aug = np.array(P_aug)
+        fl = Q.dot(P_aug).real
+
+        # building Residual equation for continuation
+        beta = 0.1
+        fl_ = Q.H.dot(fl) # force in frequency domain
+        fnl = lambda u : beta*H@(B_delta.dot(u)**3)
+        fnl_ = lambda u_ : Q.H.dot(fnl(Q.dot(u_))) - fl_
+        Z = lambda w : create_Z_matrix(K,C,M,f0= w/(2.0*np.pi),nH=nH)
+        R = lambda u_, w : Z(w).dot(u_) + fnl_(u_)
+
+        # build force nonlineat
+        Ro = ReshapeOperator(n_dofs,n_points)
+        Itime = np.eye(n_points)
+        #BB = Booleanintime(B_delta,Itime)
+        BB = np.kron(B_delta,Itime)
+        HH = np.kron(H,Itime)
+        fnl_void = lambda u : beta*HH@((BB.dot(u))**3)
+        fnl__void = lambda u_ : Q.H.Q.dot(fnl_void(Q.Q.dot(u_).real)) - fl_
+        Jfln_num = real_jacobian(fnl_void)
+        Jfln_ana = lambda uv : 3*beta*HH@np.diag(BB.dot(uv)**2)
+
+        Jfln_v_num = real_jacobian(fnl__void)
+        Jfln_v_ana = lambda u_ : Q.H.Q@Jfln_ana(Q.Q.dot(u_).real)@Q.Q.real
+
+
+        #comptuting analytical derivatives
+        JZw = lambda w : assemble_jacobian_Zw_matrix(K,C,M,f0= w/(2.0*np.pi),nH=nH)
+        Jfnl = lambda u : 3*beta*HH@np.diag(BB.dot(Ro.T.dot(u))**2)
+        Jfln_ = lambda u_ :  Q.H.Q@Jfnl(Q.dot(u_).real)@Q.Q
+        JRu_ = lambda w : lambda u_ :  Z(w) + Jfln_v_ana(u_)
+        JRw = lambda u_ : lambda w : np.array([[JZw(w).dot(u_)]])
+
+        # computing numerical jacobian
+        JRw_num = lambda u_ : real_jacobian(lambda w : R(u_,w))
+        #JRu_num = lambda w : optimize.complex_jacobian(lambda u_ : R(u_,w))
+        JRu_num = lambda w : complex_jacobian(lambda u_ : R(u_,w))
+        Jfln__num = complex_jacobian(fnl_ )
+
+        x0 = np.array([0.0]*n_dofs*nH,dtype=np.complex)
+        y_d, p_d, info_dict = continuation(R,x0=x0,p_range=(0.01,3), p0=0.1, correction_method='matcont',
+                                            jacx=JRu_,#jacp=JRw,
+                                            max_int=200, max_dp=0.05,step=0.5, max_int_corr=20, tol=1.0E-10,
+                                            print_mode=True)
         
     def _test_2dof_duffing_fixed_parameter_corrector(self):
         nH = 2
@@ -1584,12 +1643,13 @@ if __name__ == '__main__':
     
     sys.path.append('..')
 
-    from src.frequency import cos_bases_for_MHBM, create_Z_matrix, linear_harmonic_force, hbm_complex_bases, assemble_hbm_operator
+    from src.frequency import cos_bases_for_MHBM, create_Z_matrix, linear_harmonic_force, hbm_complex_bases, assemble_hbm_operator, assemble_HBMOperator
     from src.operators import ReshapeOperator
 
-    #main()
+    main()
     
-    test_obj = Test_root()
+    #test_obj = Test_root()
     #test_obj.test_complex_spiral()
-    test_obj.test_spiral()
+    #test_obj.test_spiral()
+    #test_obj.test_duffing_with_analytical_derivative()
     
