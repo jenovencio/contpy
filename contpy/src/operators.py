@@ -4,6 +4,7 @@ import collections
 from unittest import TestCase, main
 from numpy.testing import assert_array_equal
 from scipy.sparse.linalg import LinearOperator as LO
+from scipy import sparse
 from .utils import OrderedSet, get_dofs
 
 class ReshapeOperator():
@@ -200,7 +201,126 @@ class HBMOperator_conj_():
     def _matvec(self,u):
         return self.Q.T.dot(self.Ro.T.dot(u))
 
+class Nonlinear_Force_AFT():
+    def __init__(self,Q,Nonlinear_Force_obj):
+        self.Q = Q
+        self.Nonlinear_Force_obj = Nonlinear_Force_obj
+        self.f_nonlinear = Nonlinear_Force_obj.compute_force
+        self.J_nonlinear = Nonlinear_Force_obj.compute_jacobian
+        self.Fnl_obj_list = Nonlinear_Force_obj.Fnl_obj_list
+        self.row_indices = np.array([],dtype=np.int)
+        self.col_indices = np.array([],dtype=np.int)
+        self.jacobian_indices_computed = False
+        self.ndofs, self.time_points, ndofs_x_nH = Q.shape
+        self.nH = int(ndofs_x_nH/self.ndofs)
+        self.Q_block_list = self._create_Q_block_list()
 
+    def _create_Q_block_list(self):
+        ndofs = self.ndofs
+        nH = self.nH
+        QQA_ = self.Q.Q.tocsr()
+        Q_block_list = []
+        for i in range(nH):
+            QQA = QQA_[:,i*ndofs:(i+1)*ndofs]
+            Q_block_list.append(QQA)
+        return Q_block_list
+
+    def _multiply(self,JJJ_s,Q_block_list):
+        nH = self.nH
+        J_list = []
+        J_conj_list = []
+        for i in range(nH):
+            row_list = []
+            conj_row_list = []
+            for j in range(nH):
+            
+                QQA = Q_block_list[i]
+                QQT = Q_block_list[j].T
+                QQH = QQT.conj()
+                JQA = JJJ_s.dot(QQA)
+                J_row = QQH.dot(JQA)
+                J_conj_row = QQT.dot(JQA)
+                row_list.append(J_row)
+                conj_row_list.append(J_conj_row)
+                
+            J_list.append(row_list)
+            J_conj_list.append(conj_row_list)
+
+        return J_list, J_conj_list
+
+    def compute_force_and_jac(self,u_):
+        ''' evaluate the nonlinear force in frequency domain
+        '''
+        time_points = self.time_points 
+        ndofs = self.ndofs
+        Q = self.Q
+        fnl_in_time, J_in_time = self._fnl_and_jac(Q.dot(u_))
+        self.JJJ = JJJ = J_in_time.reshape(time_points*ndofs,time_points*ndofs,order='C')
+   
+        J_list, J_conj_list = self._multiply(JJJ,self.Q_block_list)
+
+        jac_in_freq_complex = sparse.bmat(J_list)
+        jac_in_freq_complex_conjugate = sparse.bmat(J_conj_list)
+        
+        fnl_in_freq = Q.H.dot(fnl_in_time)
+       
+        return fnl_in_freq, jac_in_freq_complex, jac_in_freq_complex_conjugate
+
+    def local2global(self,local_array,m,i): 
+        return local_array*m + i
+
+    def _fnl_and_jac(self,U):
+        
+        Fnl_obj_list = self.Fnl_obj_list
+        n, m = self.ndofs, self.time_points
+        Fnl, JFnl = self.f_nonlinear, self.J_nonlinear
+        big_n = m*n
+        global_force = np.zeros((n,m))
+        row_indices = self.row_indices
+        col_indices = self.col_indices
+        local2global = self.local2global
+        data = np.array([])
+        for i in range(self.time_points):
+            un_1 = U[:,i]
+            if i>1:
+                un = U[:,i-1]
+            else:
+                un = 0.0*un_1
+
+            fnl_eval = Fnl(un_1,un)
+            jfnl_eval = JFnl(un_1,un)
+            global_force[:,i] = fnl_eval
+           
+            jfnl_eval_copy = jfnl_eval.tocoo()
+            if not self.jacobian_indices_computed:
+                
+                rows_local = jfnl_eval_copy.row
+                cols_local = jfnl_eval_copy.col
+                rows = local2global(rows_local,m,i)
+                cols = local2global(cols_local,m,i)
+                row_indices =  np.concatenate((row_indices,rows))
+                col_indices =  np.concatenate((col_indices,cols))
+
+            data = np.concatenate((data,jfnl_eval_copy.data))
+
+            for Fnl_obj in Fnl_obj_list:
+                Fnl_obj.refresh_alpha()
+
+        for Fnl_obj in Fnl_obj_list:
+                Fnl_obj.refresh_alpha()
+        
+        try:
+            self._J_aloc.data = data
+        except:
+            self._J_aloc = sparse.coo_matrix((data,(row_indices,col_indices)),shape=(big_n,big_n))
+            #self._J_aloc = self._J_aloc.tocsc()
+            self.jacobian_indices_computed = True
+            self.row_indices = row_indices
+            self.col_indices = col_indices 
+
+        return global_force, self._J_aloc.tocsc()
+
+    
 class SelectionOperator():
     def __init__(self,selection_dict,id_matrix=None):
         ''' the selection dict contain labels as key and 

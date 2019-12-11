@@ -1,5 +1,7 @@
 from scipy import optimize, sparse
+from scipy.optimize import OptimizeResult 
 import numpy as np
+from numpy.linalg import norm
 from unittest import TestCase, main
 from scipy.misc import derivative
 from scipy.sparse.linalg import LinearOperator
@@ -164,11 +166,19 @@ def complex_array_to_real(v_complex):
     else:
         return np.array([ v_complex.real,  v_complex.imag])  
 
-def complex_matrix_to_real_block(M_complex,sparse_matrix=True):
+def complex_matrix_to_real_block(M_complex,M_complex_conj=None,sparse_matrix=True):
     ''' this function converts a complex matrix with format
 
+    inputs
+        M_complex : matrix
+            matrix with complex computer
+        M_complex_conj : matrix , default = None
+            The complex conjugate of the matrix
+        sparse_matrix : Boolean
+            output as a sparse matrix
+
     M_complex = M_real + 1J*M_imag
-    
+    M_complex_conj = M_real - 1J*M_imag
     into a block matrix M_block with format:
 
     M_block = [[ M_real, M_imag],
@@ -187,15 +197,31 @@ def complex_matrix_to_real_block(M_complex,sparse_matrix=True):
             real block matrix with real and imag blocks with [2m, 2m] shape
 
     '''
-    M_real = sparse.csc_matrix(M_complex.real)
-    M_imag = sparse.csc_matrix(M_complex.imag)
-    M_block_real_row_1 = sparse.hstack((M_real,M_imag ))
-    M_block_real_row_2 = sparse.hstack((-M_imag,M_real))
-    M_block = sparse.vstack((M_block_real_row_1, M_block_real_row_2))
-    if sparse_matrix:
-        return M_block 
+    
+    if M_complex_conj is None:
+        M_real = sparse.csc_matrix(M_complex.real)
+        M_imag = sparse.csc_matrix(M_complex.imag)
+        M_block_real_row_1 = sparse.hstack((M_real,M_imag ))
+        M_block_real_row_2 = sparse.hstack((-M_imag,M_real))
+        M_block = sparse.vstack((M_block_real_row_1, M_block_real_row_2))
+        if sparse_matrix:
+            return M_block 
+        else:
+            return M_block.toarray()
     else:
-        return M_block.toarray()
+        JJ = 0.5*M_complex
+        JJ_conj = 0.5*M_complex_conj.conj()
+        JJ_block = complex_matrix_to_real_block(JJ,sparse_matrix=sparse_matrix)
+        JJ_conj = sparse.csc_matrix(JJ_conj)
+        M_imag = sparse.csc_matrix(M_complex.imag)
+        #JJ_conj_block = complex_matrix_to_real_block(JJ_conj,sparse_matrix=sparse_matrix)
+        JJ_conj_block = sparse.bmat([[JJ_conj.real, JJ_conj.imag],[JJ_conj.imag,-JJ_conj.real]])
+        J_add = JJ_block + JJ_conj_block
+            
+        if sparse_matrix:
+            return J_add 
+        else:
+            return J_add.toarray()
 
 def complex_derivative(fun,n=1):
 
@@ -252,13 +278,16 @@ def root(fun, x0, args=(), method='hybr', jac=None, tol=None, callback=None, opt
     deals with complex functions
     '''
     if  x0.dtype== 'complex':
-        
+        func_real = lambda x : func_wrapper(fun,x)
         if callable(jac):
             jac_real = lambda x : jac_wrapper(jac,x).toarray()
-            func_real = lambda x : func_wrapper(fun,x)
+            
         elif jac is None:
             jac_real = None
-            func_real = lambda x : func_wrapper(fun,x)
+            
+        elif jac is False:
+            jac_real = False
+        
         elif jac==True or jac>0:
             raise('Not supported! please create a callable function')
 
@@ -278,7 +307,8 @@ def root(fun, x0, args=(), method='hybr', jac=None, tol=None, callback=None, opt
         #    scipy_opt_obj.complex_QR = real_block_matrix_to_complex(scipy_opt_obj.fjac*scipy_opt_obj.ipvt)
 
         if 'cov_x' in scipy_opt_obj:
-            scipy_opt_obj.cov_x = real_block_matrix_to_complex(scipy_opt_obj.cov_x)
+            if scipy_opt_obj.cov_x is not None:
+                scipy_opt_obj.cov_x = real_block_matrix_to_complex(scipy_opt_obj.cov_x)
     else:
         scipy_opt_obj = optimize.root(fun, x0, args=args, method=method, jac=jac, tol=tol, callback=callback, options=options)
     
@@ -783,6 +813,315 @@ def fixed_direction(fun,y0,v0,G,Gy,R,b,hx=None,max_int=20,tol=1.0E-6):
             success = False
 
     return y,v,error_norm, error_list, success
+
+
+def linear_solver(A,b):
+    return sparse.linalg.spsolve( A, b, permc_spec='MMD_ATA')
+
+
+def Newton(R,X0,maxiter=100,tol=1.0e-6,method=None,jac=None):
+
+    success = False
+    
+    xn = X0
+    if jac==True:
+        b, K = R(xn)
+    else:
+        K = None
+        b = R(xn)
+
+    opt = OptimizeResult()
+    opt.success = success
+    opt.x = xn
+    opt.fun = b
+    
+    if jac is None:
+        raise ValueError('The user must provide the Jacobian.')
+
+    nfev = 0
+    norm_bn = np.linalg.norm(b)
+    for i in range(maxiter):        
+        if norm_bn>=tol:
+            if jac == True:
+                b, K = R(xn)
+                deltaX = linear_solver(K,-b)
+                xn += deltaX
+                b, K = R(xn)
+            else:
+                K = jac(xn)
+                deltaX = linear_solver(K,-b)
+                xn += deltaX
+                b = R(xn)
+
+            nfev+=1
+
+            norm_bn1 = np.linalg.norm(b)
+            if norm_bn1>norm_bn:
+                print('Newton step not good, starting line search')
+                pk = deltaX
+                try:
+                    gfk = Kn.dot(bn/norm_bn)
+                except:
+                    gfk = K.dot(b/norm_bn1)
+                    xk = xn
+                if jac == True:
+                    f = lambda x : np.linalg.norm(R(x)[0])
+                else:
+                    f = lambda x : np.linalg.norm(R(x))
+                alpha, f_count, f_val = line_search_armijo(f, xk, pk, gfk, norm_bn, c1=1e-4, alpha0=1)
+                if alpha is None:
+                    print('Line search did not converge!')
+                    alpha = 0.1
+                    print('set alpha = %2.2d' %alpha)
+    
+                nfev +=f_count
+                xn = xk + alpha*pk
+                if jac==True:
+                    b, K = R(xn)
+                else:
+                    b = R(xn)
+                norm_bn1 = np.linalg.norm(b)
+                
+
+            norm_bn = norm_bn1
+            xk = xn.copy()
+            bn = b.copy()
+            Kn = K
+
+        else:
+
+            opt.success = True
+            opt.x = xn
+            opt.fun = b
+            opt.jac = K
+            opt.nfev = i
+            opt.njev = i
+            break
+
+    return opt
+
+def LevenbergMarquardt(R,X0,maxiter=100,tol=1.0e-6,method=None,jac=None,tau=1.0e-20,verbose=True):
+    '''
+    Reference
+    https://gist.github.com/geggo/92c77159a9b8db5aae73
+    '''
+    p = X0
+    if jac is True:
+        f, J = R(X0)
+        fnew = f
+        Rn = f
+        Jnew = J
+    else:
+        f = fnew = Rn = R(X0)
+        Jnew  = J = jac(X0)
+
+    success = False
+    opt = OptimizeResult()
+    opt.success = success
+    opt.x = X0
+    opt.fun = Rn
+
+    A = J.T@J
+    g = J.T.dot(Rn)
+
+    I = sparse.eye(len(X0))
+
+    k = 0; nu = 2
+    try:
+        muI = tau * sparse.diags(A.diagonal())
+    except:
+        muI = tau *np.diag(np.array(A.diagonal()).flatten())
+    success = np.linalg.norm(g, np.Inf) < tol
+
+    while not success and k < maxiter:
+        k += 1
+
+        try:
+            d = linear_solver( A + muI, -g)
+        except np.linalg.LinAlgError:
+            print("Singular matrix encountered in LM")
+            success = True
+            reason = 'singular matrix'
+            break
+
+        if np.linalg.norm(d) < tol*(norm(X0) + tol):
+            success = True
+            reason = 'small step'
+            break
+
+        pnew = p + d
+
+        if jac is True:
+            fnew, Jnew = R(pnew)
+            Rn = fnew
+            J = Jnew 
+        else:
+            fnew = Rn = R(pnew)
+            Jnew = J = jac(pnew)
+        #rho = (norm(f) - norm(fnew))/inner(d, mu*d - g)  # /2????
+        rho = (norm(f)**2 - norm(fnew)**2)/d.dot(tau*d - g)
+        
+        if rho > 0:
+            p = pnew
+            A = J.T@J
+            g = J.T.dot(Rn)
+
+            f = fnew
+            J = Jnew
+            if (norm(g, np.Inf) < tol): # or norm(fnew) < eps3):
+                success = True
+                reason = "small gradient"
+                break
+            tau = tau * max([1.0/3, 1.0 - (2*rho - 1)**3])
+            nu = 2.0
+        else:
+            tau = tau * nu
+            nu = 2*nu
+
+        muI = tau * sparse.diags(A.diagonal())
+
+        if verbose:
+            print("step %2d: |f|: %9.6g tau: %8.3g rho: %8.3g"%(k, norm(f), tau, rho))
+
+    else:
+        reason = "max iter reached"
+
+    if verbose:
+        print(reason)
+    
+    if success:
+        opt.success = success
+        opt.x = p
+        opt.fun = f
+        opt.jac = Jnew
+        opt.nfev = k
+        opt.njev = k
+        
+
+    return opt
+
+
+#------------------------------------------------------------------------------
+# Armijo line and scalar searches
+#------------------------------------------------------------------------------
+
+def line_search_armijo(f, xk, pk, gfk, old_fval, args=(), c1=1e-4, alpha0=1):
+    """Minimize over alpha, the function ``f(xk+alpha pk)``.
+
+    Parameters
+    ----------
+    f : callable
+        Function to be minimized.
+    xk : array_like
+        Current point.
+    pk : array_like
+        Search direction.
+    gfk : array_like
+        Gradient of `f` at point `xk`.
+    old_fval : float
+        Value of `f` at point `xk`.
+    args : tuple, optional
+        Optional arguments.
+    c1 : float, optional
+        Value to control stopping criterion.
+    alpha0 : scalar, optional
+        Value of `alpha` at start of the optimization.
+
+    Returns
+    -------
+    alpha
+    f_count
+    f_val_at_alpha
+
+    Notes
+    -----
+    Uses the interpolation algorithm (Armijo backtracking) as suggested by
+    Wright and Nocedal in 'Numerical Optimization', 1999, pg. 56-57
+
+    """
+    xk = np.atleast_1d(xk)
+    fc = [0]
+
+    def phi(alpha1):
+        fc[0] += 1
+        return f(xk + alpha1*pk, *args)
+
+    if old_fval is None:
+        phi0 = phi(0.)
+    else:
+        phi0 = old_fval  # compute f(xk) -- done in past loop
+
+    derphi0 = np.dot(gfk, pk)
+    alpha, phi1 = scalar_search_armijo(phi, phi0, derphi0, c1=c1,
+                                       alpha0=alpha0)
+    return alpha, fc[0], phi1
+
+
+def line_search_BFGS(f, xk, pk, gfk, old_fval, args=(), c1=1e-4, alpha0=1):
+    """
+    Compatibility wrapper for `line_search_armijo`
+    """
+    r = line_search_armijo(f, xk, pk, gfk, old_fval, args=args, c1=c1,
+                           alpha0=alpha0)
+    return r[0], r[1], 0, r[2]
+
+
+def scalar_search_armijo(phi, phi0, derphi0, c1=1e-4, alpha0=1, amin=0):
+    """Minimize over alpha, the function ``phi(alpha)``.
+
+    Uses the interpolation algorithm (Armijo backtracking) as suggested by
+    Wright and Nocedal in 'Numerical Optimization', 1999, pg. 56-57
+
+    alpha > 0 is assumed to be a descent direction.
+
+    Returns
+    -------
+    alpha
+    phi1
+
+    """
+    phi_a0 = phi(alpha0)
+    if phi_a0 <= phi0 + c1*alpha0*derphi0:
+        return alpha0, phi_a0
+
+    # Otherwise compute the minimizer of a quadratic interpolant:
+
+    alpha1 = -(derphi0) * alpha0**2 / 2.0 / (phi_a0 - phi0 - derphi0 * alpha0)
+    phi_a1 = phi(alpha1)
+
+    if (phi_a1 <= phi0 + c1*alpha1*derphi0):
+        return alpha1, phi_a1
+
+    # Otherwise loop with cubic interpolation until we find an alpha which
+    # satifies the first Wolfe condition (since we are backtracking, we will
+    # assume that the value of alpha is not too small and satisfies the second
+    # condition.
+
+    while alpha1 > amin:       # we are assuming alpha>0 is a descent direction
+        factor = alpha0**2 * alpha1**2 * (alpha1-alpha0)
+        a = alpha0**2 * (phi_a1 - phi0 - derphi0*alpha1) - \
+            alpha1**2 * (phi_a0 - phi0 - derphi0*alpha0)
+        a = a / factor
+        b = -alpha0**3 * (phi_a1 - phi0 - derphi0*alpha1) + \
+            alpha1**3 * (phi_a0 - phi0 - derphi0*alpha0)
+        b = b / factor
+
+        alpha2 = (-b + np.sqrt(abs(b**2 - 3 * a * derphi0))) / (3.0*a)
+        phi_a2 = phi(alpha2)
+
+        if (phi_a2 <= phi0 + c1*alpha2*derphi0):
+            return alpha2, phi_a2
+
+        if (alpha1 - alpha2) > alpha1 / 2.0 or (1 - alpha2/alpha1) < 0.96:
+            alpha2 = alpha1 / 2.0
+
+        alpha0 = alpha1
+        alpha1 = alpha2
+        phi_a0 = phi_a1
+        phi_a1 = phi_a2
+
+    # Failed to find a suitable step length
+    return None, phi_a1
 
 
 class  Test_root(TestCase):
