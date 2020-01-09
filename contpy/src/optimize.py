@@ -7,6 +7,7 @@ from scipy.misc import derivative
 from scipy.sparse.linalg import LinearOperator
 from scipy import linalg
 import numdifftools as nd
+import time
 
 def func_wrapper(fun,x0_aug_real,extra_arg=None):
     ''' This function is a wrapper function for
@@ -814,12 +815,33 @@ def fixed_direction(fun,y0,v0,G,Gy,R,b,hx=None,max_int=20,tol=1.0E-6):
 
     return y,v,error_norm, error_list, success
 
+class LinearSolver():
+    def __init__(self, **parameters):
+        self.__dict__.update(parameters)
+
+    def solve(self,A,b, verbose=True):
+        time1 = time.time()
+        x = sparse.linalg.spsolve( A, b, permc_spec='MMD_ATA')
+        time2 = time.time()
+        if verbose:
+            print('Linear solver function took {:.3f} ms'.format((time2-time1)*1000.0))
+        
+        return x
+
+    def update(self,x):
+        pass
+
 
 def linear_solver(A,b):
     return sparse.linalg.spsolve( A, b, permc_spec='MMD_ATA')
 
 
-def Newton(R,X0,maxiter=100,tol=1.0e-6,method=None,jac=None):
+def Newton(R,X0,maxiter=100,tol=1.0e-6,method=None,jac=None,linear_solver=None,verbose=False):
+
+    if linear_solver is None:
+        LO = LinearSolver()
+    else:
+        LO = linear_solver
 
     success = False
     
@@ -844,18 +866,23 @@ def Newton(R,X0,maxiter=100,tol=1.0e-6,method=None,jac=None):
         if norm_bn>=tol:
             if jac == True:
                 b, K = R(xn)
-                deltaX = linear_solver(K,-b)
+                LO.update(xn)
+                deltaX = LO.solve(K,-b)
                 xn += deltaX
                 b, K = R(xn)
             else:
                 K = jac(xn)
-                deltaX = linear_solver(K,-b)
+                LO.update(xn)
+                deltaX = LO.solve(K,-b)
                 xn += deltaX
                 b = R(xn)
 
             nfev+=1
 
             norm_bn1 = np.linalg.norm(b)
+            if verbose:
+                print("step %2d: |f|: %9.6g "%(i, norm_bn1))
+
             if norm_bn1>norm_bn:
                 print('Newton step not good, starting line search')
                 pk = deltaX
@@ -900,11 +927,17 @@ def Newton(R,X0,maxiter=100,tol=1.0e-6,method=None,jac=None):
 
     return opt
 
-def LevenbergMarquardt(R,X0,maxiter=100,tol=1.0e-6,method=None,jac=None,tau=1.0e-20,verbose=True):
+def LevenbergMarquardt(R,X0,maxiter=100,tol=1.0e-6,method=None,jac=None,tau=1.0e-20,verbose=True,linear_solver=None):
     '''
     Reference
     https://gist.github.com/geggo/92c77159a9b8db5aae73
     '''
+
+    if linear_solver is None:
+        LO = LinearSolver()
+    else:
+        LO = linear_solver
+
     p = X0
     if jac is True:
         f, J = R(X0)
@@ -927,6 +960,9 @@ def LevenbergMarquardt(R,X0,maxiter=100,tol=1.0e-6,method=None,jac=None,tau=1.0e
     I = sparse.eye(len(X0))
 
     k = 0; nu = 2
+    if verbose:
+            print("step %2d: |f|: %9.6g tau: %8.3g rho: %8.3g"%(k, norm(f), tau, 1.0E10))
+
     try:
         muI = tau * sparse.diags(A.diagonal())
     except:
@@ -937,7 +973,9 @@ def LevenbergMarquardt(R,X0,maxiter=100,tol=1.0e-6,method=None,jac=None,tau=1.0e
         k += 1
 
         try:
-            d = linear_solver( A + muI, -g)
+            LO.update(p)
+            d = LO.solve(A + muI,-g)
+
         except np.linalg.LinAlgError:
             print("Singular matrix encountered in LM")
             success = True

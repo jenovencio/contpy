@@ -309,15 +309,17 @@ class Nonlinear_Force_AFT():
         for Fnl_obj in Fnl_obj_list:
                 Fnl_obj.refresh_alpha()
         
+        '''
         try:
             self._J_aloc.data = data
         except:
             self._J_aloc = sparse.coo_matrix((data,(row_indices,col_indices)),shape=(big_n,big_n))
             #self._J_aloc = self._J_aloc.tocsc()
-            self.jacobian_indices_computed = True
+            #self.jacobian_indices_computed = True
             self.row_indices = row_indices
             self.col_indices = col_indices 
-
+        '''
+        self._J_aloc = sparse.coo_matrix((data,(row_indices,col_indices)),shape=(big_n,big_n))
         return global_force, self._J_aloc.tocsc()
 
     
