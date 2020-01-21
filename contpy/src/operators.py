@@ -248,28 +248,41 @@ class Nonlinear_Force_AFT():
 
         return J_list, J_conj_list
 
-    def compute_force_and_jac(self,u_):
+    def compute_force_and_jac(self,u_,compute_jac=True):
         ''' evaluate the nonlinear force in frequency domain
         '''
         time_points = self.time_points 
         ndofs = self.ndofs
         Q = self.Q
-        fnl_in_time, J_in_time = self._fnl_and_jac(Q.dot(u_))
-        self.JJJ = JJJ = J_in_time.reshape(time_points*ndofs,time_points*ndofs,order='C')
-   
-        J_list, J_conj_list = self._multiply(JJJ,self.Q_block_list)
 
-        jac_in_freq_complex = sparse.bmat(J_list)
-        jac_in_freq_complex_conjugate = sparse.bmat(J_conj_list)
-        
+        if compute_jac:
+            fnl_in_time, J_in_time = self._fnl_and_jac(Q.dot(u_),compute_jac=compute_jac)
+        else:
+            fnl_in_time = self._fnl_and_jac(Q.dot(u_),compute_jac=compute_jac)
+            
         fnl_in_freq = Q.H.dot(fnl_in_time)
-       
-        return fnl_in_freq, jac_in_freq_complex, jac_in_freq_complex_conjugate
+
+        if compute_jac:
+            self.JJJ = JJJ = J_in_time.reshape(time_points*ndofs,time_points*ndofs,order='C')
+    
+            J_list, J_conj_list = self._multiply(JJJ,self.Q_block_list)
+
+            jac_in_freq_complex = sparse.bmat(J_list)
+            jac_in_freq_complex_conjugate = sparse.bmat(J_conj_list)
+                
+            return fnl_in_freq, jac_in_freq_complex, jac_in_freq_complex_conjugate
+        
+        else:
+            return fnl_in_freq
+
+
+    def compute_force(self,u_):
+        return self.compute_force_and_jac(u_,compute_jac=False)
 
     def local2global(self,local_array,m,i): 
         return local_array*m + i
 
-    def _fnl_and_jac(self,U):
+    def _fnl_and_jac(self,U,compute_jac=True):
         
         Fnl_obj_list = self.Fnl_obj_list
         n, m = self.ndofs, self.time_points
@@ -288,20 +301,22 @@ class Nonlinear_Force_AFT():
                 un = 0.0*un_1
 
             fnl_eval = Fnl(un_1,un)
-            jfnl_eval = JFnl(un_1,un)
+            
             global_force[:,i] = fnl_eval
            
-            jfnl_eval_copy = jfnl_eval.tocoo()
-            if not self.jacobian_indices_computed:
-                
-                rows_local = jfnl_eval_copy.row
-                cols_local = jfnl_eval_copy.col
-                rows = local2global(rows_local,m,i)
-                cols = local2global(cols_local,m,i)
-                row_indices =  np.concatenate((row_indices,rows))
-                col_indices =  np.concatenate((col_indices,cols))
+            if compute_jac:
+                jfnl_eval = JFnl(un_1,un)
+                jfnl_eval_copy = jfnl_eval.tocoo()
+                if not self.jacobian_indices_computed:
+                    
+                    rows_local = jfnl_eval_copy.row
+                    cols_local = jfnl_eval_copy.col
+                    rows = local2global(rows_local,m,i)
+                    cols = local2global(cols_local,m,i)
+                    row_indices =  np.concatenate((row_indices,rows))
+                    col_indices =  np.concatenate((col_indices,cols))
 
-            data = np.concatenate((data,jfnl_eval_copy.data))
+                data = np.concatenate((data,jfnl_eval_copy.data))
 
             for Fnl_obj in Fnl_obj_list:
                 Fnl_obj.refresh_alpha()
@@ -309,19 +324,11 @@ class Nonlinear_Force_AFT():
         for Fnl_obj in Fnl_obj_list:
                 Fnl_obj.refresh_alpha()
         
-        '''
-        try:
-            self._J_aloc.data = data
-        except:
+        if compute_jac:
             self._J_aloc = sparse.coo_matrix((data,(row_indices,col_indices)),shape=(big_n,big_n))
-            #self._J_aloc = self._J_aloc.tocsc()
-            #self.jacobian_indices_computed = True
-            self.row_indices = row_indices
-            self.col_indices = col_indices 
-        '''
-        self._J_aloc = sparse.coo_matrix((data,(row_indices,col_indices)),shape=(big_n,big_n))
-        return global_force, self._J_aloc.tocsc()
-
+            return global_force, self._J_aloc.tocsc()
+        else:
+            return global_force
     
 class SelectionOperator():
     def __init__(self,selection_dict,id_matrix=None):
