@@ -856,6 +856,8 @@ def Newton(R,X0,maxiter=100,tol=1.0e-6,method=None,jac=None,linear_solver=None,v
     opt.success = success
     opt.x = xn
     opt.fun = b
+    opt.nfev = 1
+    opt.njev = 1
     
     if jac is None:
         raise ValueError('The user must provide the Jacobian.')
@@ -918,13 +920,14 @@ def Newton(R,X0,maxiter=100,tol=1.0e-6,method=None,jac=None,linear_solver=None,v
         else:
 
             opt.success = True
-            opt.x = xn
-            opt.fun = b
-            opt.jac = K
-            opt.nfev = i
-            opt.njev = i
             break
 
+        opt.x = xn
+        opt.fun = b
+        opt.jac = K
+        opt.nfev = i
+        opt.njev = i
+            
     return opt
 
 def LevenbergMarquardt(R,X0,maxiter=100,tol=1.0e-6,method=None,jac=None,tau=1.0e-20,verbose=True,linear_solver=None):
@@ -1029,11 +1032,12 @@ def LevenbergMarquardt(R,X0,maxiter=100,tol=1.0e-6,method=None,jac=None,tau=1.0e
     
     if success:
         opt.success = success
-        opt.x = p
-        opt.fun = f
-        opt.jac = Jnew
-        opt.nfev = k
-        opt.njev = k
+
+    opt.x = p
+    opt.fun = f
+    opt.jac = Jnew
+    opt.nfev = k
+    opt.njev = k
         
 
     return opt
@@ -1092,6 +1096,8 @@ def line_search_armijo(f, xk, pk, gfk, old_fval, args=(), c1=1e-4, alpha0=1):
     derphi0 = np.dot(gfk, pk)
     alpha, phi1 = scalar_search_armijo(phi, phi0, derphi0, c1=c1,
                                        alpha0=alpha0)
+
+    print('Line search minumim norm |f| %f ' %phi1)
     return alpha, fc[0], phi1
 
 
